@@ -1,0 +1,82 @@
+# This play pushes a non-default DSC resource set to the target machine and proceeds 
+# to configure a new windows domain.
+#
+---
+- hosts: windows  
+  gather_facts: no
+  tasks:
+    - name: push xActiveDirectory
+      win_copy: 
+        src: binaries/xActiveDirectory.zip
+        dest: C:\windows\temp\
+        ensure: present
+      tags:
+        - setup
+        - dsc
+    
+    - name: unarchive xActiveDirectory
+      win_dsc: 
+        resource_name: archive
+        path: c:\windows\temp\xActiveDirectory.zip
+        destination: C:\Windows\System32\WindowsPowerShell\v1.0\modules 
+        ensure: present
+      tags:
+        - setup
+        - dsc
+    
+    - name: install win features
+      win_dsc:
+        resource_name: windowsfeature
+        name: "{{ item }}"
+        includeallsubfeature: true
+        ensure: present
+      with_items:
+        - ad-domain-services
+        - dns
+      tags:
+        - setup
+        - dsc
+
+    - name: creation with xADDomain
+      win_dsc: 
+        resource_name: xADDomain
+        DomainName: us.megacorp.biz 
+        DomainAdministratorCredential_username: bob 
+        DomainAdministratorCredential_password: B0bP4ssw0rd
+        SafemodeAdministratorPassword_username: XSafteyDance 
+        SafemodeAdministratorPassword_password: Men[Withou[tHats()
+      register: domain
+      tags:
+        - setup
+        - dsc
+        
+    - name: Reboot
+      win_reboot:
+        reboot_timeout: 600 
+        post_reboot_delay: 15
+      when: domain.reboot_required
+      tags:
+        - setup
+        - dsc
+        
+    - name: Ensure user bob is present with address information
+      win_domain_user:
+        name: bob
+        password: B0bP4ssw0rd
+        firstname: Bob
+        surname: Smith
+        company: BobCo
+        groups:
+          - Domain Admins
+        street: 123 4th St.
+        city: Sometown
+        state_province: IN
+        postal_code: 12345
+        country: US
+        state: present
+      tags:
+        - bob
+    
+    
+    
+    

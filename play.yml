@@ -1,0 +1,111 @@
+# This play installs wmf5.1 (required for DSC), demonstrates a few native ansible
+# windows modules, and performs some basic configuration via win_dsc.
+#
+---
+- hosts: windows  
+  gather_facts: no
+  tasks:
+    - name: catch hostname 
+      win_command: hostname
+      register: hostname
+      changed_when: false
+      tags:
+        - fun
+
+    - name: print hostname
+      debug:
+        var: hostname.stdout
+      tags:
+        - fun
+   
+    - name: copy WMF5 installer
+      win_copy:
+        src: binaries/Win8.1AndW2K12R2-KB3191564-x64.msu 
+        dest: c:\users\administrator\desktop\Win8.1AndW2K12R2-KB3191564-x64.msu
+        state: present
+      tags:
+        - prereq
+        - wmf5
+
+    - name: Install WMF5 
+      win_hotfix:
+        source: c:\users\administrator\desktop\Win8.1AndW2K12R2-KB3191564-x64.msu
+        hotfix_kb: KB3191564 
+        state: present
+      register: wmf5
+      when: ansible_os_name == "Microsoft Windows Server 2012 R2 Standard" and ansible_architecture == "64-bit"
+      tags:
+        - prereq
+        - wmf5
+
+    - name: Reboot
+      win_reboot:
+        reboot_timeout: 600 
+        post_reboot_delay: 15
+      when: wmf5.reboot_required
+      tags:
+        - prereq
+        - wmf5
+
+    - name: Remove Hosts
+      win_dsc:
+        resource_name: file 
+        DestinationPath: c:\users\administrator\desktop\hosts.txt
+        ensure: absent
+      tags:
+        - fun
+
+    - name: no sql services
+      win_dsc:
+        resource_name: service 
+        name: "{{ item }}"
+        startuptype: disabled
+        state: stopped
+        ensure: present
+      with_items:
+        - mssqlserver
+        - SQLTELEMETRY
+        - SQLWriter
+        - ReportServer
+      tags:
+        - sqlserversucks
+
+    - name: Install BBWin
+      win_dsc:
+        resource_name: package
+        name: BBWin 0.13 # name and product ID must match msi 
+        ProductId: 9E24125E-8C40-45E4-84F9-A1B601404AAF
+        Path: https://downloads.sourceforge.net/project/bbwin/bbwin/0.13/BBWin_0.13.msi
+        Ensure: present
+      tags:
+        - bbwin
+
+    - name: Copy BBWin Config
+      win_copy:
+        src: binaries/BBWin.cfg
+        dest: c:\program files (x86)\bbwin\etc\bbwin.cfg
+        state: present
+      tags:
+        - bbwin
+
+    - name: BBWin Service
+      win_dsc:
+        resource_name: service 
+        name: BBWin
+        startuptype: automatic
+        state: running
+        ensure: present
+      tags:
+        - bbwin
+
+    - name: management tools 
+      win_dsc:
+        resource_name: windowsfeature
+        name: "{{ item }}"
+        includeallsubfeature: true
+        ensure: present
+      with_items:
+        - rsat-ad-tools 
+        - gpmc
+      tags:
+        - AD_tools 
